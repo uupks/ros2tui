@@ -25,6 +25,7 @@ find_package(ament_cmake REQUIRED)
 # find_package(<dependency> REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(dynmsg REQUIRED)
+find_package(dynmsg_demo REQUIRED)
 find_package(spdlog REQUIRED)
 
 add_executable(ros2tui
@@ -39,6 +40,7 @@ target_link_libraries(ros2tui
     ftxui::screen
     rclcpp::rclcpp 
     dynmsg::dynmsg
+    dynmsg_demo::dynmsg_demo_library
     spdlog::spdlog
 )
 

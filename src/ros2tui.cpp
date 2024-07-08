@@ -13,8 +13,11 @@
 #include "dynmsg/msg_parser.hpp"
 #include "dynmsg/typesupport.hpp"
 #include "dynmsg/yaml_utils.hpp"
+#include "dynmsg_demo/typesupport_utils.hpp"
 
 #include "spdlog/fmt/fmt.h"
+
+#include <dlfcn.h>
 
 namespace ros2tui {
 
@@ -48,6 +51,7 @@ public:
     std::string topic_type_;
     RosMessage_Cpp ros_cppmsg_;
     rcutils_allocator_t allocator_;
+    InterfaceTypeName interface_type_;
     rclcpp::GenericSubscription::SharedPtr sub_;
 
     // for static
@@ -318,8 +322,9 @@ void ROS2TuiImpl::create_topic_monitor()
         );
 
         auto& ros_cppmsg = topic_manager[topic_name]->ros_cppmsg_;
-        InterfaceTypeName interface = get_topic_type_from_string_type(topic_type);
-        ros_cppmsg.type_info = dynmsg::cpp::get_type_info(interface);
+        auto& interface_type = topic_manager[topic_name]->interface_type_;
+        interface_type = get_topic_type_from_string_type(topic_type);
+        ros_cppmsg.type_info = dynmsg::cpp::get_type_info(interface_type);
         dynmsg::cpp::ros_message_with_typeinfo_init(ros_cppmsg.type_info, &ros_cppmsg, &topic_manager[topic_name]->allocator_);
     };
 
@@ -346,8 +351,10 @@ void ROS2TuiImpl::create_topic_monitor()
         }
     };
 
+    // topic list
     auto list_radiobox = Radiobox(&topic_list, &selected, options);
 
+    // topic echo
     auto echo_renderer = Renderer([&] {
         ftxui::Elements paragraph;
         if (topic_manager.find(topic_name) == topic_manager.end()) {
@@ -408,6 +415,7 @@ void ROS2TuiImpl::create_topic_monitor()
         return vflow(paragraph);
     });
 
+    // topic info
     auto info_renderer = Renderer([&] {
         ftxui::Elements paragraph;
         auto pubs = node_->get_publishers_info_by_topic(topic_name);
@@ -443,8 +451,59 @@ void ROS2TuiImpl::create_topic_monitor()
         return vflow(paragraph);
     });
 
-    auto pub_renderer = Renderer([&] {
-        return text("Pub");
+    // topic pub
+    auto update_message_str = [&] (const std::string& topic_name, std::string& message_yaml_str) {
+        auto& meta = topic_manager[topic_name];
+        if (meta->ros_cppmsg_.data != nullptr) {
+            YAML::Node yaml_msg = dynmsg::cpp::message_to_yaml(meta->ros_cppmsg_);
+            message_yaml_str = dynmsg::yaml_to_string(yaml_msg);
+        }
+    };
+
+    std::string message_yaml_str;
+    auto input_option = InputOption();
+    input_option.on_enter = [&] {
+        update_message_str(topic_name, message_yaml_str);
+    };
+
+    Component input_message = Input(&message_yaml_str, "Message", input_option);
+
+    auto btn_pub = Button("Publish", [&](){ 
+        // debug_str = message_yaml_str;
+        auto meta = topic_manager[topic_name];
+        
+        RosMessage_Cpp message = dynmsg::cpp::yaml_to_rosmsg(meta->interface_type_, message_yaml_str);
+        rcl_publisher_t pub = rcl_get_zero_initialized_publisher();
+        rcl_publisher_options_t pub_options = rcl_publisher_get_default_options();
+        const auto * type_support = get_type_support(meta->interface_type_);
+        if (type_support == nullptr) {
+            return;
+        }
+        auto ret = rcl_publisher_init(&pub, node_->get_node_base_interface()->get_rcl_node_handle(), type_support, topic_name.c_str(), &pub_options);
+        if (ret != RCL_RET_OK) {
+            RCUTILS_LOG_ERROR_NAMED("cli-tool", "subscription init failed");
+            return;
+        }
+
+        ret = rcl_publish(&pub, message.data, nullptr);
+
+        ret = rcl_publisher_fini(&pub, node_->get_node_base_interface()->get_rcl_node_handle());
+        if (ret != RCL_RET_OK) {
+            RCUTILS_LOG_ERROR_NAMED("cli-tool", "publisher fini failed");
+            return;
+        }
+        return;
+        
+    });
+
+    auto btn_stop = Button("Stop", [&](){});
+
+    auto pub_container = Container::Vertical({
+        input_message | border,
+        Container::Horizontal({
+            btn_pub,
+            // btn_stop,
+        }),
     });
 
     int tab_index = 0;
@@ -458,7 +517,7 @@ void ROS2TuiImpl::create_topic_monitor()
         {
             echo_renderer,
             info_renderer,
-            pub_renderer,
+            pub_container,
         },
         &tab_index);
 
@@ -473,13 +532,16 @@ void ROS2TuiImpl::create_topic_monitor()
     });
 
     main_container |= CatchEvent([&](Event event) {
+        auto active_child = main_container->ActiveChild();
         if (event == Event::Escape) {
+            if (active_child->ActiveChild() == list_radiobox) {
             screen.Exit();
             return true;
+            }
+            return false;
         } 
         else if (event == Event::Tab) 
         {
-            auto active_child = main_container->ActiveChild();
             if (active_child->ActiveChild() == tab_component) 
             {
                 list_radiobox->TakeFocus();
@@ -507,6 +569,7 @@ void ROS2TuiImpl::create_topic_monitor()
                         tab_selection->Render() | notflex,
                         tab_content->Render() | notflex,
                     }) | border | notflex,
+                    // paragraph(debug_str) | border,
                 }),
         });
     });
