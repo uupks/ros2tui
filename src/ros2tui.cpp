@@ -531,6 +531,44 @@ void ROS2TuiImpl::create_service_monitor()
     using namespace ftxui;
     auto screen = ScreenInteractive::FitComponent();
     screen.TrackMouse(false);
+
+    std::vector<std::string> service_list;
+    std::map<std::string, std::vector<std::string>> service_list_with_type;
+    auto update_service_list = [&] () {
+        service_list_with_type = node_->get_service_names_and_types();
+        service_list.clear();
+        for (const auto& s : service_list_with_type) {
+            service_list.push_back(s.first);
+        }
+    };
+
+    update_service_list();
+
+    std::string service_name = "None";
+    std::string service_type = "None";
+    
+    int selected = 0;
+    int focused_entry = 0;
+
+    RadioboxOption options;
+    options.focused_entry = &focused_entry;
+    options.on_change = [&] () {
+        if (selected == focused_entry && focused_entry > 0) {
+            // service name
+            service_name = service_list[focused_entry];
+            // service type, use the first one when there are multiplt type 
+            auto it = service_list_with_type.find(service_name);
+            if (it != service_list_with_type.end()) {
+                service_type = it->second[0];
+                // create_generic_sub2(service_name, service_type);
+            }
+        } else if (selected == 0) {
+            service_name = "None";
+            service_type = "None";
+        }
+    };
+
+    auto service_list_radiobox = Radiobox(&service_list, &selected, options);
     
     bool is_support_service_monitor = false;
     auto ros_distro = std::getenv("ROS_DISTRO");
@@ -538,22 +576,72 @@ void ROS2TuiImpl::create_service_monitor()
         is_support_service_monitor = true;
     }
 
-    auto btn_quit = Button("Back", screen.ExitLoopClosure());
-
     auto warning_text = Renderer([&] {
         if (is_support_service_monitor) {
-            return text("Service Monitor is not Implemented");
+            return text("Service Call is not Implemented");
         } else {
-            return text("Service Monitor is only supported in ROS Jazzy");
+            return text("Service Call is only supported in ROS Jazzy");
         }
     });
 
-    auto main_container = Container::Vertical({
-        warning_text | bold | hcenter | border,
-        btn_quit | border | hcenter,
+    auto service_call_container = Container::Vertical({
+        warning_text,
     });
 
-    screen.Loop(main_container);
+    auto main_container = Container::Horizontal({
+        service_list_radiobox,
+        service_call_container,
+    });
+
+    main_container |= CatchEvent([&](Event event) {
+        if (event == Event::Escape) {
+            screen.Exit();
+            return true;
+        } 
+        else if (event == Event::Tab) 
+        {
+            auto active_child = main_container->ActiveChild();
+            if (active_child->ActiveChild() == service_call_container) 
+            {
+                service_list_radiobox->TakeFocus();
+                return true;
+            } else if (active_child->ActiveChild() == service_list_radiobox)
+            {
+                active_child->ActiveChild()->SetActiveChild(service_call_container);
+                service_call_container->TakeFocus();
+                return true;
+            }
+            return false;
+        } 
+        else 
+        {
+            return false;
+        }
+    });
+
+    auto main_renderer = Renderer(main_container, [&] {
+        return vbox({
+                text("Service Monitor") | bold | hcenter,
+                hbox({
+                    service_list_radiobox->Render() | border | notflex,
+                    warning_text->Render() | border | notflex,
+                }),
+        });
+    });
+
+    Loop loop(&screen, main_renderer);
+    int custom_loop_count = 0;
+    while (!loop.HasQuitted()) {
+        custom_loop_count++;
+
+        if (custom_loop_count % 20 == 0) { 
+            update_service_list();
+        }
+        
+        screen.PostEvent(Event::Custom);
+        loop.RunOnce();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
 }
 
 //////////////////////
