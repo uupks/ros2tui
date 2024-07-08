@@ -462,19 +462,38 @@ void ROS2TuiImpl::create_topic_monitor()
         },
         &tab_index);
 
+    auto tab_component = Container::Vertical({
+        tab_selection,
+        tab_content,
+    });
+
     auto main_container = Container::Horizontal({
         list_radiobox,
-        Container::Vertical({
-            tab_selection,
-            tab_content,
-        }),
+        tab_component,
     });
 
     main_container |= CatchEvent([&](Event event) {
         if (event == Event::Escape) {
             screen.Exit();
             return true;
-        } else {
+        } 
+        else if (event == Event::Tab) 
+        {
+            auto active_child = main_container->ActiveChild();
+            if (active_child->ActiveChild() == tab_component) 
+            {
+                list_radiobox->TakeFocus();
+                return true;
+            } else if (active_child->ActiveChild() == list_radiobox)
+            {
+                active_child->ActiveChild()->SetActiveChild(tab_selection);
+                tab_selection->TakeFocus();
+                return true;
+            }
+            return false;
+        } 
+        else 
+        {
             return false;
         }
     });
