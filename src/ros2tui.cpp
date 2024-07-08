@@ -138,8 +138,6 @@ void ROS2TuiImpl::create_node_monitor()
     auto screen = ScreenInteractive::Fullscreen();
     screen.TrackMouse(false);
 
-    Elements node_info_paragraph;
-
     std::vector<std::string> node_names;
     auto graph_interface = node_->get_node_graph_interface();
     
@@ -151,6 +149,9 @@ void ROS2TuiImpl::create_node_monitor()
 
     auto update_node_info = [&] (const std::string& node_name) {
         Elements paragraph;
+        if (node_name.empty()) {
+            return vflow(paragraph);
+        }
 
         auto node_name_with_ns = graph_interface->get_node_names_and_namespaces();
         for (const auto& n : node_name_with_ns) {
@@ -194,7 +195,7 @@ void ROS2TuiImpl::create_node_monitor()
                 paragraph.push_back(ftxui::text(""));
             }
         }
-        node_info_paragraph.swap(paragraph);
+        return vflow(paragraph);
     };
 
     update_node_list();
@@ -209,14 +210,15 @@ void ROS2TuiImpl::create_node_monitor()
             node_name = node_names[selected];
             update_node_info(node_name);
         } else if (selected == 0) {
-            node_info_paragraph.clear();
+            node_name = "";
+            update_node_info(node_name);
         }
     };
 
     auto list_radiobox = Radiobox(&node_names, &selected, options);
 
     auto node_info_win = Renderer([&] {
-        return vflow(node_info_paragraph);
+        return update_node_info(node_name);
     });
 
     auto main_container = Container::Horizontal({
@@ -267,9 +269,6 @@ void ROS2TuiImpl::create_topic_monitor()
     std::string topic_name = "None";
     std::string topic_type = "None";
     std::string debug_str = "";
-
-    Elements topic_info_paragraph;
-    Elements topic_echo_paragraph;
 
     std::vector<std::string> topic_list;
     std::map<std::string, std::vector<std::string>> topic_list_with_type;
@@ -344,8 +343,6 @@ void ROS2TuiImpl::create_topic_monitor()
         } else if (selected == 0) {
             topic_name = "None";
             topic_type = "None";
-            topic_echo_paragraph.clear();
-            topic_info_paragraph.clear();
         }
     };
 
@@ -354,7 +351,6 @@ void ROS2TuiImpl::create_topic_monitor()
     auto echo_renderer = Renderer([&] {
         ftxui::Elements paragraph;
         if (topic_manager.find(topic_name) == topic_manager.end()) {
-            topic_echo_paragraph.swap(paragraph);
             return vflow(paragraph);
         }
 
