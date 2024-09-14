@@ -535,8 +535,8 @@ void ROS2TuiImpl::create_topic_monitor()
         auto active_child = main_container->ActiveChild();
         if (event == Event::Escape) {
             if (active_child->ActiveChild() == list_radiobox) {
-            screen.Exit();
-            return true;
+                screen.Exit();
+                return true;
             }
             return false;
         } 
@@ -564,7 +564,7 @@ void ROS2TuiImpl::create_topic_monitor()
         return vbox({
                 text("Topic Monitor") | bold | hcenter,
                 hbox({
-                    list_radiobox->Render() | border | notflex,
+                    list_radiobox->Render() | vscroll_indicator | frame | border,
                     vbox({
                         tab_selection->Render() | notflex,
                         tab_content->Render() | notflex,
